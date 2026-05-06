@@ -1,0 +1,12 @@
+{
+  "appId": "com.chinastock.monitor",
+  "appName": "A股涨停监控",
+  "webDir": "web/dist",
+  "server": {
+    "androidScheme": "https",
+    "cleartext": false
+  },
+  "android": {
+    "allowMixedContent": false
+  }
+}

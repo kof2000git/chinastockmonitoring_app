@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+
+# Client web assets are source files for this repository
+!web/dist/
+!web/dist/**
+
+# Capacitor / Android generated files
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/app/src/main/assets/capacitor.config.json
+android/app/src/main/assets/capacitor.plugins.json
+android/app/src/main/res/xml/config.xml
+
+# Build outputs
+*.apk
+*.aab
+*.aar
+*.ap_
+*.dex
+*.class
+
+# Local environment
+.env
+.env.*
+local.properties
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Signing keys
+*.jks
+*.keystore

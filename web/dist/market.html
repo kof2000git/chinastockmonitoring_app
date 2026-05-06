@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>大盘分析 - A股涨停监控系统</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>" type="image/svg+xml">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            color: #fff;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .producer-credit {
+            display: inline-flex;
+            align-items: center;
+            margin-bottom: 10px;
+            padding: 6px 12px;
+            border: 1px solid rgba(72,219,251,0.32);
+            border-radius: 999px;
+            background: rgba(72,219,251,0.1);
+            color: #9be7ff;
+            font-size: 0.82em;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+        }
+
+        /* 头部 */
+        .header {
+            display: flex;
+            align-items: center;
+            padding: 20px 0;
+            margin-bottom: 30px;
+        }
+
+        .back-btn {
+            background: rgba(255,255,255,0.1);
+            border: none;
+            padding: 10px 20px;
+            border-radius: 10px;
+            color: #fff;
+            cursor: pointer;
+            font-size: 1em;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .back-btn:hover {
+            background: rgba(255,255,255,0.2);
+        }
+
+        .header h1 {
+            margin-left: 20px;
+            font-size: 1.8em;
+        }
+
+        /* 标签栏 */
+        .tabs {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 30px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            padding-bottom: 15px;
+        }
+
+        .tab {
+            padding: 10px 25px;
+            background: transparent;
+            border: none;
+            color: #888;
+            cursor: pointer;
+            font-size: 1em;
+            border-radius: 8px;
+            transition: all 0.3s;
+        }
+
+        .tab:hover {
+            background: rgba(255,255,255,0.1);
+        }
+
+        .tab.active {
+            background: rgba(102,126,234,0.3);
+            color: #fff;
+        }
+
+        /* 分析记录卡片 */
+        .records-list {
+            display: grid;
+            gap: 15px;
+        }
+
+        .record-card {
+            background: rgba(255,255,255,0.05);
+            border-radius: 15px;
+            padding: 20px;
+            transition: transform 0.3s;
+        }
+
+        .record-card:hover {
+            transform: translateY(-2px);
+            background: rgba(255,255,255,0.08);
+        }
+
+        .record-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .record-time {
+            font-size: 1.1em;
+            font-weight: 600;
+        }
+
+        .record-meta {
+            font-size: 0.85em;
+            color: #888;
+        }
+
+        .score-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: 600;
+        }
+
+        .score-badge.high {
+            background: rgba(231,76,60,0.3);
+            color: #e74c3c;
+        }
+
+        .score-badge.medium {
+            background: rgba(243,156,18,0.3);
+            color: #f39c12;
+        }
+
+        .score-badge.low {
+            background: rgba(39,174,96,0.3);
+            color: #27ae60;
+        }
+
+        .record-summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        .summary-item {
+            background: rgba(0,0,0,0.2);
+            border-radius: 10px;
+            padding: 12px;
+            text-align: center;
+        }
+
+        .summary-label {
+            font-size: 0.8em;
+            color: #888;
+            margin-bottom: 5px;
+        }
+
+        .summary-value {
+            font-size: 1.1em;
+            font-weight: 600;
+        }
+
+        .advice-box {
+            background: rgba(102,126,234,0.1);
+            border-left: 4px solid #667eea;
+            border-radius: 5px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+
+        .advice-label {
+            font-weight: 600;
+            color: #667eea;
+            margin-bottom: 8px;
+        }
+
+        .detail-section {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .detail-section h5 {
+            margin-bottom: 10px;
+            color: #48dbfb;
+        }
+
+        .detail-text {
+            color: #aaa;
+            line-height: 1.6;
+            font-size: 0.95em;
+        }
+
+        .expand-btn {
+            background: rgba(255,255,255,0.1);
+            border: none;
+            padding: 8px 16px;
+            border-radius: 8px;
+            color: #fff;
+            cursor: pointer;
+            font-size: 0.9em;
+            margin-top: 10px;
+            transition: all 0.3s;
+        }
+
+        .expand-btn:hover {
+            background: rgba(255,255,255,0.2);
+        }
+
+        /* 加载状态 */
+        .loading {
+            text-align: center;
+            padding: 60px;
+            color: #888;
+        }
+
+        .loading .spinner {
+            width: 50px;
+            height: 50px;
+            border: 3px solid rgba(255,255,255,0.1);
+            border-top-color: #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* 空状态 */
+        .empty {
+            text-align: center;
+            padding: 60px;
+            color: #888;
+        }
+
+        /* 错误状态 */
+        .error {
+            background: rgba(231,76,60,0.1);
+            border: 1px solid rgba(231,76,60,0.3);
+            border-radius: 15px;
+            padding: 40px;
+            text-align: center;
+            color: #e74c3c;
+        }
+
+        .data-notice {
+            display: none;
+            margin-bottom: 20px;
+            padding: 12px 16px;
+            border-radius: 12px;
+            background: rgba(243,156,18,0.12);
+            border: 1px solid rgba(243,156,18,0.35);
+            color: #ffd79a;
+            line-height: 1.6;
+        }
+
+        .data-notice.show {
+            display: block;
+        }
+
+        @media (max-width: 768px) {
+            body {
+                background: #10182f;
+            }
+
+            .container {
+                padding: 14px;
+                padding-left: max(14px, env(safe-area-inset-left));
+                padding-right: max(14px, env(safe-area-inset-right));
+            }
+
+            .header {
+                padding: 12px 0;
+                margin-bottom: 18px;
+                align-items: flex-start;
+                gap: 12px;
+            }
+
+            .producer-credit {
+                margin-bottom: 6px;
+                padding: 5px 10px;
+                font-size: 0.76em;
+            }
+
+            .back-btn {
+                padding: 9px 13px;
+                border-radius: 12px;
+                font-size: 0.9em;
+            }
+
+            .header h1 {
+                margin-left: 0;
+                font-size: 1.35em;
+                line-height: 1.35;
+            }
+
+            .tabs {
+                gap: 8px;
+                margin-bottom: 18px;
+                overflow-x: auto;
+                padding-bottom: 10px;
+            }
+
+            .tab {
+                flex: 0 0 auto;
+                padding: 9px 16px;
+                font-size: 0.92em;
+            }
+
+            .record-card {
+                border-radius: 18px;
+                padding: 16px;
+            }
+
+            .record-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 10px;
+            }
+
+            .record-summary {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 10px;
+            }
+
+            .summary-item {
+                padding: 10px 8px;
+            }
+
+            .advice-box {
+                padding: 13px;
+                line-height: 1.65;
+            }
+
+            .detail-text {
+                font-size: 0.92em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="producer-credit">52Bluetooth群友荣誉出品</div>
+        <!-- 头部 -->
+        <div class="header">
+            <button class="back-btn" onclick="goBack()">
+                <span>🔙</span> 返回
+            </button>
+            <h1>大盘分析历史</h1>
+        </div>
+
+        <!-- 标签栏 -->
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('today')" id="tabToday">今日分析</button>
+            <button class="tab" onclick="switchTab('history')" id="tabHistory">历史记录</button>
+        </div>
+
+        <div class="data-notice" id="historyNotice"></div>
+
+        <!-- 内容区域 -->
+        <div id="content">
+            <div class="loading">
+                <div class="spinner"></div>
+                <p>正在加载...</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="app-config.js"></script>
+    <script src="app-runtime.js"></script>
+    <script>
+        let currentTab = 'today';
+        let records = [];
+        let currentMeta = {};
+        const runtime = window.StockMonitorRuntime || {
+            apiUrl: path => path,
+            navigate: path => { window.location.href = path; }
+        };
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            loadRecords();
+        });
+
+        // 返回主页
+        function goBack() {
+            runtime.navigate('index.html');
+        }
+
+        // 切换标签
+        function switchTab(tab) {
+            currentTab = tab;
+
+            // 更新标签样式
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.getElementById(tab === 'today' ? 'tabToday' : 'tabHistory').classList.add('active');
+
+            // 重新加载记录
+            loadRecords();
+        }
+
+        function applyHistoryNotice(meta) {
+            currentMeta = meta || {};
+            const notice = document.getElementById('historyNotice');
+            if (!notice) {
+                return;
+            }
+
+            const hint = currentMeta.historical_hint || '';
+            notice.textContent = hint;
+            notice.classList.toggle('show', Boolean(hint));
+        }
+
+        // 加载记录
+        async function loadRecords() {
+            const content = document.getElementById('content');
+            content.innerHTML = `
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>正在加载...</p>
+                </div>
+            `;
+
+            try {
+                // 获取本地日期（非UTC），格式化为 YYYY-MM-DD
+                const getLocalDate = () => {
+                    const now = new Date();
+                    const year = now.getFullYear();
+                    const month = String(now.getMonth() + 1).padStart(2, '0');
+                    const day = String(now.getDate()).padStart(2, '0');
+                    return `${year}-${month}-${day}`;
+                };
+                const date = currentTab === 'today' ? getLocalDate() : null;
+                const response = await fetch(runtime.apiUrl(`/api/market/history?limit=50${date ? `&date=${date}` : ''}`));
+                const data = await response.json();
+
+                if (data.code === 0) {
+                    applyHistoryNotice(data.meta || {});
+                    records = data.data;
+                    renderRecords(records);
+                } else {
+                    applyHistoryNotice({});
+                    renderEmpty();
+                }
+            } catch (error) {
+                applyHistoryNotice({});
+                renderError(error.message);
+            }
+        }
+
+        // 渲染记录
+        function renderRecords(recordList) {
+            const content = document.getElementById('content');
+
+            if (!recordList || recordList.length === 0) {
+                renderEmpty();
+                return;
+            }
+
+            content.innerHTML = `<div class="records-list">`;
+
+            recordList.forEach((record, index) => {
+                const score = record.overall_score || 50;
+                let scoreClass = 'medium';
+                if (score >= 70) scoreClass = 'high';
+                else if (score < 50) scoreClass = 'low';
+
+                const trendText = {
+                    'strong_up': '强势上涨',
+                    'up': '震荡向上',
+                    'neutral': '震荡整理',
+                    'down': '震荡向下',
+                    'strong_down': '弱势下跌'
+                }[record.short_trend] || '中性';
+
+                const triggerText = {
+                    'scheduled': '定时分析',
+                    'volatility': '波动触发',
+                    'manual': '手动分析'
+                }[record.trigger_type] || '未知';
+
+                content.innerHTML += `
+                    <div class="record-card">
+                        <div class="record-header">
+                            <div>
+                                <div class="record-time">${formatDateTime(record.analyzed_at)}</div>
+                                <div class="record-meta">${triggerText}</div>
+                        </div>
+                        <div class="score-badge ${scoreClass}">
+                            ${score}分 - ${trendText}
+                        </div>
+                    </div>
+
+                    <div class="record-summary">
+                        <div class="summary-item">
+                            <div class="summary-label">市场温度</div>
+                            <div class="summary-value">${score}°</div>
+                        </div>
+                        <div class="summary-item">
+                            <div class="summary-label">趋势判断</div>
+                            <div class="summary-value">${trendText}</div>
+                        </div>
+                    </div>
+
+                    <div class="advice-box">
+                        <div class="advice-label">💡 操作建议</div>
+                        <div>${record.strategy_advice || '暂无建议'}</div>
+                    </div>
+
+                    <button class="expand-btn" onclick="toggleDetail(${index})">查看详情</button>
+
+                    <div id="detail-${index}" class="detail-section" style="display: none;">
+                        <h5>📈 指数研判</h5>
+                        <div class="detail-text">${record.indices_analysis || '暂无分析'}</div>
+
+                        <h5>😶 市场情绪</h5>
+                        <div class="detail-text">${record.sentiment_analysis || '暂无分析'}</div>
+
+                        <h5>📊 量能趋势</h5>
+                        <div class="detail-text">${record.volume_analysis || '暂无分析'}</div>
+
+                        <h5>� 资金面</h5>
+                        <div class="detail-text">${record.fund_analysis || '暂无分析'}</div>
+
+                        <h5>�🔄 板块轮动</h5>
+                        <div class="detail-text">${record.sector_analysis || '暂无分析'}</div>
+
+                        <h5>🔮 未来走势预判</h5>
+                        <div class="detail-text">${record.future_outlook || '暂无预判'}</div>
+
+                        <h5>🎯 关键点位</h5>
+                        <div class="detail-text">${record.key_levels || '暂无数据'}</div>
+
+                        <h5>📋 预判依据</h5>
+                        <div class="detail-text">${record.prediction_evidence || '暂无依据'}</div>
+
+                        <h5>⚠️ 风险提示</h5>
+                        <div class="detail-text">${record.risk_alert || '暂无提示'}</div>
+                    </div>
+                    </div>
+                `;
+            });
+
+            content.innerHTML += `</div>`;
+        }
+
+        // 切换详情显示
+        function toggleDetail(index) {
+            const detail = document.getElementById(`detail-${index}`);
+            const btn = event.target;
+
+            if (detail.style.display === 'none') {
+                detail.style.display = 'block';
+                btn.textContent = '收起详情';
+            } else {
+                detail.style.display = 'none';
+                btn.textContent = '查看详情';
+            }
+        }
+
+
+        // 渲染空状态
+        function renderEmpty() {
+            document.getElementById('content').innerHTML = `
+                <div class="empty">
+                    <span style="font-size: 3em;">📊</span><br><br>
+                    <p>暂无分析记录</p>
+                    <p style="color: #888; margin-top: 10px;">系统将在交易时段自动分析</p>
+                </div>
+            `;
+        }
+
+        // 渲染错误
+        function renderError(message) {
+            document.getElementById('content').innerHTML = `
+                <div class="error">
+                    <p>加载失败: ${message}</p>
+                </div>
+            `;
+        }
+
+        // 格式化日期时间
+        function formatDateTime(timeStr) {
+            try {
+                const date = new Date(timeStr);
+                const month = date.getMonth() + 1;
+                const day = date.getDate();
+                const hour = date.getHours();
+                const minute = date.getMinutes();
+                return `${month}月${day}日 ${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+            } catch {
+                return timeStr;
+            }
+        }
+    </script>
+</body>
+</html>
