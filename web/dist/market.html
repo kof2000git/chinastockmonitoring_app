@@ -399,8 +399,31 @@
         let currentMeta = {};
         const runtime = window.StockMonitorRuntime || {
             apiUrl: path => path,
-            navigate: path => { window.location.href = path; }
+            navigate: path => { window.location.href = path; },
+            fetchOptions: options => options || {}
         };
+
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, char => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            }[char]));
+        }
+
+        function safeText(value, fallback = '') {
+            if (value === null || value === undefined || value === '') {
+                return escapeHtml(fallback);
+            }
+            return escapeHtml(value);
+        }
+
+        function safeNumber(value, fallback = 0) {
+            const number = Number(value);
+            return Number.isFinite(number) ? number : fallback;
+        }
 
         // 初始化
         document.addEventListener('DOMContentLoaded', function() {
@@ -456,7 +479,7 @@
                     return `${year}-${month}-${day}`;
                 };
                 const date = currentTab === 'today' ? getLocalDate() : null;
-                const response = await fetch(runtime.apiUrl(`/api/market/history?limit=50${date ? `&date=${date}` : ''}`));
+                const response = await fetch(runtime.apiUrl(`/api/market/history?limit=50${date ? `&date=${date}` : ''}`), runtime.fetchOptions());
                 const data = await response.json();
 
                 if (data.code === 0) {
@@ -485,7 +508,7 @@
             content.innerHTML = `<div class="records-list">`;
 
             recordList.forEach((record, index) => {
-                const score = record.overall_score || 50;
+                const score = safeNumber(record.overall_score, 50);
                 let scoreClass = 'medium';
                 if (score >= 70) scoreClass = 'high';
                 else if (score < 50) scoreClass = 'low';
@@ -503,64 +526,65 @@
                     'volatility': '波动触发',
                     'manual': '手动分析'
                 }[record.trigger_type] || '未知';
+                const safeIndex = safeNumber(index, 0);
 
                 content.innerHTML += `
                     <div class="record-card">
                         <div class="record-header">
                             <div>
-                                <div class="record-time">${formatDateTime(record.analyzed_at)}</div>
-                                <div class="record-meta">${triggerText}</div>
+                                <div class="record-time">${safeText(formatDateTime(record.analyzed_at))}</div>
+                                <div class="record-meta">${safeText(triggerText)}</div>
                         </div>
                         <div class="score-badge ${scoreClass}">
-                            ${score}分 - ${trendText}
+                            ${safeText(score)}分 - ${safeText(trendText)}
                         </div>
                     </div>
 
                     <div class="record-summary">
                         <div class="summary-item">
                             <div class="summary-label">市场温度</div>
-                            <div class="summary-value">${score}°</div>
+                            <div class="summary-value">${safeText(score)}°</div>
                         </div>
                         <div class="summary-item">
                             <div class="summary-label">趋势判断</div>
-                            <div class="summary-value">${trendText}</div>
+                            <div class="summary-value">${safeText(trendText)}</div>
                         </div>
                     </div>
 
                     <div class="advice-box">
                         <div class="advice-label">💡 操作建议</div>
-                        <div>${record.strategy_advice || '暂无建议'}</div>
+                        <div>${safeText(record.strategy_advice, '暂无建议')}</div>
                     </div>
 
-                    <button class="expand-btn" onclick="toggleDetail(${index})">查看详情</button>
+                    <button class="expand-btn" onclick="toggleDetail(${safeIndex})">查看详情</button>
 
-                    <div id="detail-${index}" class="detail-section" style="display: none;">
+                    <div id="detail-${safeIndex}" class="detail-section" style="display: none;">
                         <h5>📈 指数研判</h5>
-                        <div class="detail-text">${record.indices_analysis || '暂无分析'}</div>
+                        <div class="detail-text">${safeText(record.indices_analysis, '暂无分析')}</div>
 
                         <h5>😶 市场情绪</h5>
-                        <div class="detail-text">${record.sentiment_analysis || '暂无分析'}</div>
+                        <div class="detail-text">${safeText(record.sentiment_analysis, '暂无分析')}</div>
 
                         <h5>📊 量能趋势</h5>
-                        <div class="detail-text">${record.volume_analysis || '暂无分析'}</div>
+                        <div class="detail-text">${safeText(record.volume_analysis, '暂无分析')}</div>
 
                         <h5>� 资金面</h5>
-                        <div class="detail-text">${record.fund_analysis || '暂无分析'}</div>
+                        <div class="detail-text">${safeText(record.fund_analysis, '暂无分析')}</div>
 
                         <h5>�🔄 板块轮动</h5>
-                        <div class="detail-text">${record.sector_analysis || '暂无分析'}</div>
+                        <div class="detail-text">${safeText(record.sector_analysis, '暂无分析')}</div>
 
                         <h5>🔮 未来走势预判</h5>
-                        <div class="detail-text">${record.future_outlook || '暂无预判'}</div>
+                        <div class="detail-text">${safeText(record.future_outlook, '暂无预判')}</div>
 
                         <h5>🎯 关键点位</h5>
-                        <div class="detail-text">${record.key_levels || '暂无数据'}</div>
+                        <div class="detail-text">${safeText(record.key_levels, '暂无数据')}</div>
 
                         <h5>📋 预判依据</h5>
-                        <div class="detail-text">${record.prediction_evidence || '暂无依据'}</div>
+                        <div class="detail-text">${safeText(record.prediction_evidence, '暂无依据')}</div>
 
                         <h5>⚠️ 风险提示</h5>
-                        <div class="detail-text">${record.risk_alert || '暂无提示'}</div>
+                        <div class="detail-text">${safeText(record.risk_alert, '暂无提示')}</div>
                     </div>
                     </div>
                 `;
@@ -599,7 +623,7 @@
         function renderError(message) {
             document.getElementById('content').innerHTML = `
                 <div class="error">
-                    <p>加载失败: ${message}</p>
+                    <p>加载失败: ${safeText(message)}</p>
                 </div>
             `;
         }
@@ -614,7 +638,7 @@
                 const minute = date.getMinutes();
                 return `${month}月${day}日 ${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
             } catch {
-                return timeStr;
+                return safeText(timeStr, '-');
             }
         }
     </script>

@@ -4,6 +4,7 @@
     const configWsBaseUrl = normalizeBase(config.WS_BASE_URL || config.wsBaseUrl || "");
     const localApiBaseUrl = normalizeBase(config.LOCAL_API_BASE_URL || config.localApiBaseUrl || "http://127.0.0.1:8000");
     const localWsBaseUrl = normalizeBase(config.LOCAL_WS_BASE_URL || config.localWsBaseUrl || "ws://127.0.0.1:8000/api/ws");
+    const apiToken = String(config.API_TOKEN || config.apiToken || "").trim();
     const apiBaseUrl = isNativeApp() ? configApiBaseUrl : (isFilePreview() ? localApiBaseUrl : "");
     const wsBaseUrl = isNativeApp() ? configWsBaseUrl : (isFilePreview() ? localWsBaseUrl : "");
 
@@ -34,15 +35,39 @@
         return joinBase(apiBaseUrl, path);
     }
 
+    function authHeaders(existingHeaders) {
+        const headers = Object.assign({}, existingHeaders || {});
+        if (apiToken) {
+            headers["X-API-Token"] = apiToken;
+        }
+        return headers;
+    }
+
+    function fetchOptions(options) {
+        const merged = Object.assign({}, options || {});
+        merged.headers = authHeaders(merged.headers);
+        return merged;
+    }
+
+    function appendQueryParam(url, key, value) {
+        if (!value) {
+            return url;
+        }
+        const separator = url.includes("?") ? "&" : "?";
+        return `${url}${separator}${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
+    }
+
     function wsUrl(path) {
+        let url;
         if (wsBaseUrl) {
-            return joinBase(wsBaseUrl, path || "/api/ws");
+            url = joinBase(wsBaseUrl, path || "/api/ws");
+        } else if (apiBaseUrl) {
+            url = apiUrl(path || "/api/ws").replace(/^http/i, "ws");
+        } else {
+            const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
+            url = `${wsProtocol}://${window.location.host}${normalizePath(path || "/api/ws")}`;
         }
-        if (apiBaseUrl) {
-            return apiUrl(path || "/api/ws").replace(/^http/i, "ws");
-        }
-        const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
-        return `${wsProtocol}://${window.location.host}${normalizePath(path || "/api/ws")}`;
+        return appendQueryParam(url, "token", apiToken);
     }
 
     function isNativeApp() {
@@ -86,6 +111,9 @@
         isNativeApp,
         isFilePreview,
         apiBaseUrl,
-        wsBaseUrl
+        wsBaseUrl,
+        apiToken,
+        authHeaders,
+        fetchOptions
     };
 })();

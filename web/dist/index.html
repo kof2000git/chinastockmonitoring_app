@@ -1686,7 +1686,7 @@
             <div>
                 最后更新: <span class="time" id="lastUpdate">-</span> |
                 <span id="refreshHint">数据按当前扫描配置自动刷新</span> |
-                <a href="/api/alerts" target="_blank" id="apiAlertsLink" style="color:#48dbfb">API接口</a>
+                <span id="apiAlertsLink" style="color:#48dbfb">API接口已受保护</span>
             </div>
             <div>
                 &copy; 2024 A股涨停监控系统 v1.0
@@ -1815,8 +1815,53 @@
                 const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
                 return `${wsProtocol}://${window.location.host}${path}`;
             },
-            navigate: path => { window.location.href = path; }
+            navigate: path => { window.location.href = path; },
+            fetchOptions: options => options || {}
         };
+
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, char => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            }[char]));
+        }
+
+        function safeText(value, fallback = '') {
+            if (value === null || value === undefined || value === '') {
+                return escapeHtml(fallback);
+            }
+            return escapeHtml(value);
+        }
+
+        function safeNumber(value, fallback = 0) {
+            const number = Number(value);
+            return Number.isFinite(number) ? number : fallback;
+        }
+
+        function safeFixed(value, digits = 2, fallback = 0) {
+            return safeNumber(value, fallback).toFixed(digits);
+        }
+
+        function safePercentWidth(value) {
+            return Math.max(0, Math.min(100, safeNumber(value, 0)));
+        }
+
+        function safeLevel(value) {
+            return Math.max(0, Math.min(4, Math.trunc(safeNumber(value, 0))));
+        }
+
+        function safeJsString(value) {
+            const json = JSON.stringify(String(value ?? '')).slice(1, -1);
+            return json.replace(/'/g, "\\'").replace(/</g, "\\u003C").replace(/>/g, "\\u003E");
+        }
+
+        function safeStockCode(value) {
+            const match = String(value ?? '').match(/^[0-9A-Za-z._-]{1,32}$/);
+            return match ? match[0] : '';
+        }
 
         // 后端刷新行情时偶尔会短暂返回空列表。前端保持上一批有效数据，
         // 等新数据完整到达后再整体替换，避免表格闪空。
@@ -1865,7 +1910,7 @@
             if (!hint) {
                 return '';
             }
-            return `<div class="data-notice show compact">${hint}</div>`;
+            return `<div class="data-notice show compact">${safeText(hint)}</div>`;
         }
 
         function updateLastUpdate(meta) {
@@ -1899,7 +1944,9 @@
         document.addEventListener('DOMContentLoaded', function() {
             const apiAlertsLink = document.getElementById('apiAlertsLink');
             if (apiAlertsLink) {
-                apiAlertsLink.href = runtime.apiUrl('/api/alerts');
+                if ('href' in apiAlertsLink) {
+                    apiAlertsLink.href = runtime.apiUrl('/api/alerts');
+                }
             }
             updateClock();
             setInterval(updateClock, 1000);
@@ -1975,7 +2022,7 @@
         // 获取预警数据
         async function fetchAlerts() {
             try {
-                const response = await fetch(runtime.apiUrl('/api/alerts?limit=200'));
+                const response = await fetch(runtime.apiUrl('/api/alerts?limit=200'), runtime.fetchOptions());
                 const data = await response.json();
                 if (data.code === 0) {
                     const newAlerts = Array.isArray(data.data) ? data.data : [];
@@ -2024,16 +2071,17 @@
 
             const container = document.getElementById('toastContainer');
             const toast = document.createElement('div');
-            toast.className = `toast level-${alert.level}`;
+            const level = safeLevel(alert.level);
+            toast.className = `toast level-${level}`;
 
-            const emoji = ['', '🟢', '🟡', '�', '🔴'][alert.level];
-            const levelText = ['', '关注', '预警', '紧急', '涨停'][alert.level];
+            const emoji = ['', '🟢', '🟡', '🟠', '🔴'][level] || '';
+            const levelText = ['', '关注', '预警', '紧急', '涨停'][level] || '';
 
             toast.innerHTML = `
                 <div class="toast-icon">${emoji}</div>
                 <div class="toast-content">
-                    <div class="toast-title">${alert.name} ${levelText}</div>
-                    <div class="toast-message">涨幅 ${alert.change_pct.toFixed(2)}% | 评分 ${alert.score.toFixed(1)}</div>
+                    <div class="toast-title">${safeText(alert.name, '-')} ${safeText(levelText)}</div>
+                    <div class="toast-message">涨幅 ${safeFixed(alert.change_pct, 2)}% | 评分 ${safeFixed(alert.score, 1)}</div>
                 </div>
                 <button class="toast-close" onclick="this.parentElement.remove()">×</button>
             `;
@@ -2091,7 +2139,7 @@
         // 获取统计数据
         async function fetchStatistics() {
             try {
-                const response = await fetch(runtime.apiUrl('/api/statistics'));
+                const response = await fetch(runtime.apiUrl('/api/statistics'), runtime.fetchOptions());
                 const data = await response.json();
                 if (data.code === 0) {
                     document.getElementById('alertCount').textContent = data.data.current_alerts || 0;
@@ -2100,7 +2148,7 @@
                     document.getElementById('wsConnections').textContent = data.data.ws_connections || 0;
                 }
 
-                const statusResponse = await fetch(runtime.apiUrl('/api/market/status'));
+                const statusResponse = await fetch(runtime.apiUrl('/api/market/status'), runtime.fetchOptions());
                 const statusData = await statusResponse.json();
                 if (statusData.code === 0 && statusData.data) {
                     document.getElementById('stockCount').textContent = statusData.data.stock_count || '-';
@@ -2113,8 +2161,8 @@
 
         // WebSocket连接
         function connectWebSocket() {
-            const wsUrl = runtime.wsUrl('/api/ws');
-            ws = new WebSocket(wsUrl);
+            const websocketUrl = runtime.wsUrl('/api/ws');
+            ws = new WebSocket(websocketUrl);
 
             ws.onopen = function() {
                 if (wsReconnectTimer !== null) {
@@ -2243,11 +2291,15 @@
 
         // 切换自选
         function toggleFavorite(code) {
-            const index = favorites.indexOf(code);
+            const safeCode = safeStockCode(code);
+            if (!safeCode) {
+                return;
+            }
+            const index = favorites.indexOf(safeCode);
             if (index > -1) {
                 favorites.splice(index, 1);
             } else {
-                favorites.push(code);
+                favorites.push(safeCode);
             }
             localStorage.setItem('favorites', JSON.stringify(favorites));
             renderTable();
@@ -2274,22 +2326,25 @@
         }
 
         function getStockMarketPrefix(code) {
-            if (!code) return '';
-            if (code.startsWith('6') || code.startsWith('5') || code.startsWith('9')) return 'sh';
-            if (code.startsWith('0') || code.startsWith('2') || code.startsWith('3')) return 'sz';
+            const safeCode = safeStockCode(code);
+            if (!safeCode) return '';
+            if (safeCode.startsWith('6') || safeCode.startsWith('5') || safeCode.startsWith('9')) return 'sh';
+            if (safeCode.startsWith('0') || safeCode.startsWith('2') || safeCode.startsWith('3')) return 'sz';
             return '';
         }
 
         function getStockQuoteUrl(code) {
-            const marketPrefix = getStockMarketPrefix(code);
-            if (!marketPrefix) return `https://so.eastmoney.com/web/s?keyword=${encodeURIComponent(code || '')}`;
-            return `https://finance.sina.com.cn/realstock/company/${marketPrefix}${code}/nc.shtml`;
+            const safeCode = safeStockCode(code);
+            const marketPrefix = getStockMarketPrefix(safeCode);
+            if (!marketPrefix) return `https://so.eastmoney.com/web/s?keyword=${encodeURIComponent(safeCode || '')}`;
+            return `https://finance.sina.com.cn/realstock/company/${marketPrefix}${safeCode}/nc.shtml`;
         }
 
         function getStockAnalysisUrl(code) {
-            const marketPrefix = getStockMarketPrefix(code);
-            if (!marketPrefix) return `https://so.eastmoney.com/web/s?keyword=${encodeURIComponent(code || '')}`;
-            return `https://quote.eastmoney.com/${marketPrefix}${code}.html`;
+            const safeCode = safeStockCode(code);
+            const marketPrefix = getStockMarketPrefix(safeCode);
+            if (!marketPrefix) return `https://so.eastmoney.com/web/s?keyword=${encodeURIComponent(safeCode || '')}`;
+            return `https://quote.eastmoney.com/${marketPrefix}${safeCode}.html`;
         }
 
         // 渲染表格
@@ -2333,58 +2388,67 @@
                     <tr>
                         <td colspan="15" class="no-data">
                             <span style="font-size: 3em;">📭</span><br><br>
-                            ${emptyMessage}
+                            ${safeText(emptyMessage)}
                         </td>
                     </tr>
                 `;
                 if (cards) {
-                    cards.innerHTML = `<div class="mobile-empty-card"><div style="font-size: 2.4em; margin-bottom: 10px;">📭</div><div>${emptyMessage}</div></div>`;
+                    cards.innerHTML = `<div class="mobile-empty-card"><div style="font-size: 2.4em; margin-bottom: 10px;">📭</div><div>${safeText(emptyMessage)}</div></div>`;
                 }
                 return;
             }
 
             tbody.innerHTML = alerts.map((alert, index) => {
-                const levelClass = `level-${alert.level}`;
-                const levelText = ['', '关注', '预警', '紧急', '涨停'][alert.level] || '';
-                const levelEmoji = ['', '🟢', '🟡', '🟠', '🔴'][alert.level] || '';
+                const safeCode = safeStockCode(alert.code);
+                const safeName = safeText(alert.name, '-');
+                const rawLevel = safeLevel(alert.level);
+                const levelClass = `level-${rawLevel}`;
+                const levelText = ['', '关注', '预警', '紧急', '涨停'][rawLevel] || '';
+                const levelEmoji = ['', '🟢', '🟡', '🟠', '🔴'][rawLevel] || '';
+                const changePct = safeNumber(alert.change_pct, 0);
+                const changeAmt = safeNumber(alert.change_amt, 0);
+                const distanceToLimit = safeNumber(alert.distance_to_limit, 0);
+                const score = safePercentWidth(alert.score);
+                const volumeRatio = safeNumber(alert.volume_ratio, 0);
+                const turnoverRate = safeNumber(alert.turnover_rate, 0);
 
-                const changeClass = alert.change_pct >= 0 ? 'change-up' : 'change-down';
-                const changeSign = alert.change_pct >= 0 ? '+' : '';
+                const changeClass = changePct >= 0 ? 'change-up' : 'change-down';
+                const changeSign = changePct >= 0 ? '+' : '';
 
                 let distanceClass = 'distance-far';
-                if (alert.distance_to_limit <= 1) distanceClass = 'distance-close';
-                else if (alert.distance_to_limit <= 3) distanceClass = 'distance-medium';
+                if (distanceToLimit <= 1) distanceClass = 'distance-close';
+                else if (distanceToLimit <= 3) distanceClass = 'distance-medium';
 
                 let scoreColor = '#27ae60';
-                if (alert.score >= 70) scoreColor = '#e74c3c';
-                else if (alert.score >= 50) scoreColor = '#f39c12';
+                if (score >= 70) scoreColor = '#e74c3c';
+                else if (score >= 50) scoreColor = '#f39c12';
 
-                const volumeClass = alert.volume_ratio >= 3 ? 'high' : '';
-                const turnoverClass = alert.turnover_rate >= 5 ? 'high' : '';
+                const volumeClass = volumeRatio >= 3 ? 'high' : '';
+                const turnoverClass = turnoverRate >= 5 ? 'high' : '';
 
                 const alertTime = alert.alert_time ? new Date(alert.alert_time).toLocaleTimeString() : '-';
 
-                const icon = getStockIcon(alert.code);
-                const isFavorite = favorites.includes(alert.code);
+                const icon = getStockIcon(safeCode);
+                const isFavorite = favorites.includes(safeCode);
 
-                const limitPrice = alert.limit_price ? alert.limit_price.toFixed(2) : '-';
-                const stockQuoteUrl = getStockQuoteUrl(alert.code);
-                const stockAnalysisUrl = getStockAnalysisUrl(alert.code);
+                const limitPrice = alert.limit_price ? safeFixed(alert.limit_price, 2) : '-';
+                const stockQuoteUrl = getStockQuoteUrl(safeCode);
+                const stockAnalysisUrl = getStockAnalysisUrl(safeCode);
 
                 // AI评分显示
                 let aiScoreDisplay = '-';
                 let aiScoreClass = '';
                 if (alert.ai_score !== null && alert.ai_score !== undefined) {
-                    const aiScore = alert.ai_score;
+                    const aiScore = safeNumber(alert.ai_score, 0);
                     if (aiScore >= 70) {
                         aiScoreClass = 'color: #e74c3c;';
-                        aiScoreDisplay = `<span style="${aiScoreClass} font-weight:bold;">${aiScore}</span>`;
+                        aiScoreDisplay = `<span style="${aiScoreClass} font-weight:bold;">${safeText(aiScore)}</span>`;
                     } else if (aiScore >= 50) {
                         aiScoreClass = 'color: #f39c12;';
-                        aiScoreDisplay = `<span style="${aiScoreClass}">${aiScore}</span>`;
+                        aiScoreDisplay = `<span style="${aiScoreClass}">${safeText(aiScore)}</span>`;
                     } else {
                         aiScoreClass = 'color: #27ae60;';
-                        aiScoreDisplay = `<span style="${aiScoreClass}">${aiScore}</span>`;
+                        aiScoreDisplay = `<span style="${aiScoreClass}">${safeText(aiScore)}</span>`;
                     }
                 } else {
                     aiScoreDisplay = '<span style="color: #666; font-size: 0.85em;">分析中</span>';
@@ -2395,52 +2459,52 @@
                         <td>${index + 1}</td>
                         <td>
                             <button class="favorite-btn ${isFavorite ? 'active' : ''}"
-                                    onclick="toggleFavorite('${alert.code}')">
+                                    onclick="toggleFavorite('${safeJsString(safeCode)}')">
                                 ${isFavorite ? '⭐' : '☆'}
                             </button>
                         </td>
                         <td>
                             <div class="stock-info">
-                                <div class="stock-icon ${icon.class}">${icon.text}</div>
+                                <div class="stock-icon ${safeText(icon.class)}">${safeText(icon.text)}</div>
                                 <div>
-                                    <div class="stock-name"><a class="stock-link" href="${stockQuoteUrl}" target="_blank" rel="noopener noreferrer">${alert.name || '-'}</a></div>
-                                    <div class="stock-code"><a class="stock-link" href="${stockAnalysisUrl}" target="_blank" rel="noopener noreferrer">${alert.code || '-'}</a></div>
+                                    <div class="stock-name"><a class="stock-link" href="${safeText(stockQuoteUrl)}" target="_blank" rel="noopener noreferrer">${safeName}</a></div>
+                                    <div class="stock-code"><a class="stock-link" href="${safeText(stockAnalysisUrl)}" target="_blank" rel="noopener noreferrer">${safeText(safeCode, '-')}</a></div>
                                 </div>
                             </div>
                         </td>
-                        <td class="price ${changeClass}">¥${(alert.price || 0).toFixed(2)}</td>
+                        <td class="price ${changeClass}">¥${safeFixed(alert.price, 2)}</td>
                         <td>
                             <div class="change-cell ${changeClass}">
-                                <span class="change-pct">${changeSign}${(alert.change_pct || 0).toFixed(2)}%</span>
-                                <span class="change-amt">${changeSign}${(alert.change_amt || 0).toFixed(2)}</span>
+                                <span class="change-pct">${changeSign}${changePct.toFixed(2)}%</span>
+                                <span class="change-amt">${changeSign}${changeAmt.toFixed(2)}</span>
                             </div>
                         </td>
-                        <td class="distance ${distanceClass}">${(alert.distance_to_limit || 0).toFixed(2)}%</td>
-                        <td class="price">¥${limitPrice}</td>
+                        <td class="distance ${distanceClass}">${distanceToLimit.toFixed(2)}%</td>
+                        <td class="price">¥${safeText(limitPrice)}</td>
                         <td>
                             <div class="score-cell">
                                 <div class="score-bar">
-                                    <div class="score-fill" style="width: ${alert.score || 0}%; background: ${scoreColor};"></div>
+                                    <div class="score-fill" style="width: ${score}%; background: ${scoreColor};"></div>
                                 </div>
-                                <span class="score-value" style="color: ${scoreColor}">${(alert.score || 0).toFixed(0)}</span>
+                                <span class="score-value" style="color: ${scoreColor}">${score.toFixed(0)}</span>
                             </div>
                         </td>
                         <td style="text-align:center;">${aiScoreDisplay}</td>
-                        <td><span class="level-badge ${levelClass}">${levelEmoji} ${levelText}</span></td>
+                        <td><span class="level-badge ${levelClass}">${safeText(levelEmoji)} ${safeText(levelText)}</span></td>
                         <td>
                             <div class="indicator">
-                                <span class="indicator-value ${volumeClass}">${(alert.volume_ratio || 0).toFixed(2)}</span>
+                                <span class="indicator-value ${volumeClass}">${volumeRatio.toFixed(2)}</span>
                             </div>
                         </td>
                         <td>
                             <div class="indicator">
-                                <span class="indicator-value ${turnoverClass}">${(alert.turnover_rate || 0).toFixed(2)}%</span>
+                                <span class="indicator-value ${turnoverClass}">${turnoverRate.toFixed(2)}%</span>
                             </div>
                         </td>
-                        <td>${formatAmount(alert.amount)}</td>
-                        <td>${alertTime}</td>
+                        <td>${safeText(formatAmount(alert.amount))}</td>
+                        <td>${safeText(alertTime)}</td>
                         <td>
-                            <button class="action-btn" onclick="showStockDetail('${alert.code}', '${alert.name}')">
+                            <button class="action-btn" onclick="showStockDetail('${safeJsString(safeCode)}')">
                                 详情
                             </button>
                         </td>
@@ -2457,15 +2521,24 @@
             }
 
             cards.innerHTML = alerts.map((alert, index) => {
-                const levelClass = `level-${alert.level}`;
-                const levelText = ['', '关注', '预警', '紧急', '涨停'][alert.level] || '';
-                const levelEmoji = ['', '🟢', '🟡', '🟠', '🔴'][alert.level] || '';
-                const changeClass = alert.change_pct >= 0 ? 'change-up' : 'change-down';
-                const changeSign = alert.change_pct >= 0 ? '+' : '';
-                const icon = getStockIcon(alert.code);
-                const isFavorite = favorites.includes(alert.code);
-                const stockQuoteUrl = getStockQuoteUrl(alert.code);
-                const stockAnalysisUrl = getStockAnalysisUrl(alert.code);
+                const safeCode = safeStockCode(alert.code);
+                const safeName = safeText(alert.name, '-');
+                const rawLevel = safeLevel(alert.level);
+                const levelClass = `level-${rawLevel}`;
+                const levelText = ['', '关注', '预警', '紧急', '涨停'][rawLevel] || '';
+                const levelEmoji = ['', '🟢', '🟡', '🟠', '🔴'][rawLevel] || '';
+                const changePct = safeNumber(alert.change_pct, 0);
+                const changeAmt = safeNumber(alert.change_amt, 0);
+                const distanceToLimit = safeNumber(alert.distance_to_limit, 0);
+                const score = safeNumber(alert.score, 0);
+                const volumeRatio = safeNumber(alert.volume_ratio, 0);
+                const turnoverRate = safeNumber(alert.turnover_rate, 0);
+                const changeClass = changePct >= 0 ? 'change-up' : 'change-down';
+                const changeSign = changePct >= 0 ? '+' : '';
+                const icon = getStockIcon(safeCode);
+                const isFavorite = favorites.includes(safeCode);
+                const stockQuoteUrl = getStockQuoteUrl(safeCode);
+                const stockAnalysisUrl = getStockAnalysisUrl(safeCode);
                 const aiScore = alert.ai_score !== null && alert.ai_score !== undefined ? alert.ai_score : '分析中';
                 const alertTime = alert.alert_time ? new Date(alert.alert_time).toLocaleTimeString() : '-';
 
@@ -2473,48 +2546,48 @@
                     <div class="mobile-alert-card">
                         <div class="mobile-card-header">
                             <div class="mobile-card-title">
-                                <div class="stock-icon ${icon.class}">${icon.text}</div>
+                                <div class="stock-icon ${safeText(icon.class)}">${safeText(icon.text)}</div>
                                 <div>
-                                    <div class="mobile-card-name"><a class="stock-link" href="${stockQuoteUrl}" target="_blank" rel="noopener noreferrer">${alert.name || '-'}</a></div>
-                                    <div class="mobile-card-code"><a class="stock-link" href="${stockAnalysisUrl}" target="_blank" rel="noopener noreferrer">${alert.code || '-'}</a></div>
+                                    <div class="mobile-card-name"><a class="stock-link" href="${safeText(stockQuoteUrl)}" target="_blank" rel="noopener noreferrer">${safeName}</a></div>
+                                    <div class="mobile-card-code"><a class="stock-link" href="${safeText(stockAnalysisUrl)}" target="_blank" rel="noopener noreferrer">${safeText(safeCode, '-')}</a></div>
                                 </div>
                             </div>
                             <div class="mobile-card-price ${changeClass}">
-                                ¥${(alert.price || 0).toFixed(2)}
-                                <div class="mobile-card-change">${changeSign}${(alert.change_pct || 0).toFixed(2)}%</div>
+                                ¥${safeFixed(alert.price, 2)}
+                                <div class="mobile-card-change">${changeSign}${changePct.toFixed(2)}%</div>
                             </div>
                         </div>
                         <div class="mobile-card-grid">
                             <div class="mobile-card-metric">
                                 <div class="label">评分</div>
-                                <div class="value">${(alert.score || 0).toFixed(0)}</div>
+                                <div class="value">${score.toFixed(0)}</div>
                             </div>
                             <div class="mobile-card-metric">
                                 <div class="label">AI</div>
-                                <div class="value">${aiScore}</div>
+                                <div class="value">${safeText(aiScore)}</div>
                             </div>
                             <div class="mobile-card-metric">
                                 <div class="label">距涨停</div>
-                                <div class="value">${(alert.distance_to_limit || 0).toFixed(2)}%</div>
+                                <div class="value">${distanceToLimit.toFixed(2)}%</div>
                             </div>
                             <div class="mobile-card-metric">
                                 <div class="label">量比</div>
-                                <div class="value">${(alert.volume_ratio || 0).toFixed(2)}</div>
+                                <div class="value">${volumeRatio.toFixed(2)}</div>
                             </div>
                             <div class="mobile-card-metric">
                                 <div class="label">换手</div>
-                                <div class="value">${(alert.turnover_rate || 0).toFixed(2)}%</div>
+                                <div class="value">${turnoverRate.toFixed(2)}%</div>
                             </div>
                             <div class="mobile-card-metric">
                                 <div class="label">时间</div>
-                                <div class="value">${alertTime}</div>
+                                <div class="value">${safeText(alertTime)}</div>
                             </div>
                         </div>
                         <div class="mobile-card-footer">
-                            <span class="level-badge ${levelClass}">${levelEmoji} ${levelText}</span>
+                            <span class="level-badge ${levelClass}">${safeText(levelEmoji)} ${safeText(levelText)}</span>
                             <div class="mobile-card-actions">
-                                <button class="favorite-btn ${isFavorite ? 'active' : ''}" onclick="toggleFavorite('${alert.code}')">${isFavorite ? '⭐' : '☆'}</button>
-                                <button class="mobile-card-action" onclick="showStockDetail('${alert.code}', '${alert.name}')">详情</button>
+                                <button class="favorite-btn ${isFavorite ? 'active' : ''}" onclick="toggleFavorite('${safeJsString(safeCode)}')">${isFavorite ? '⭐' : '☆'}</button>
+                                <button class="mobile-card-action" onclick="showStockDetail('${safeJsString(safeCode)}')">详情</button>
                             </div>
                         </div>
                     </div>
@@ -2562,32 +2635,37 @@
         }
 
         // 显示股票详情
-        function showStockDetail(code, name) {
-            currentStockCode = code;
-            currentStockName = name;
-
-            document.getElementById('modalTitle').textContent = `${name} (${code})`;
+        function showStockDetail(code) {
+            const safeCode = safeStockCode(code);
+            if (!safeCode) {
+                return;
+            }
+            currentStockCode = safeCode;
 
             // 填充基本信息
-            const alert = allAlerts.find(a => a.code === code);
+            const alert = allAlerts.find(a => safeStockCode(a.code) === safeCode);
+            const rawName = alert ? alert.name : '';
+            currentStockName = rawName;
+            document.getElementById('modalTitle').textContent = `${rawName || '-'} (${safeCode || '-'})`;
             if (alert) {
-                const changeClass = alert.change_pct >= 0 ? 'change-up' : 'change-down';
-                const changeSign = alert.change_pct >= 0 ? '+' : '';
+                const changePct = safeNumber(alert.change_pct, 0);
+                const changeClass = changePct >= 0 ? 'change-up' : 'change-down';
+                const changeSign = changePct >= 0 ? '+' : '';
 
                 document.getElementById('stockDetailHeader').innerHTML = `
                     <div class="stock-detail-info">
-                        <h3>${name}</h3>
-                        <div class="code">${code}</div>
+                        <h3>${safeText(rawName, '-')}</h3>
+                        <div class="code">${safeText(safeCode, '-')}</div>
                     </div>
                     <div class="stock-detail-price">
-                        <div class="price ${changeClass}">¥${(alert.price || 0).toFixed(2)}</div>
-                        <div class="change ${changeClass}">${changeSign}${(alert.change_pct || 0).toFixed(2)}%</div>
+                        <div class="price ${changeClass}">¥${safeFixed(alert.price, 2)}</div>
+                        <div class="change ${changeClass}">${changeSign}${changePct.toFixed(2)}%</div>
                     </div>
                 `;
             }
 
             // 加载系统已有的AI分析缓存结果
-            loadCachedAIScore(code);
+            loadCachedAIScore(safeCode);
 
             // 显示弹窗
             document.getElementById('stockModal').classList.add('active');
@@ -2633,7 +2711,7 @@
             `;
 
             try {
-                const response = await fetch(runtime.apiUrl(`/api/ai/score/${code}`));
+                const response = await fetch(runtime.apiUrl(`/api/ai/score/${safeStockCode(code)}`), runtime.fetchOptions());
                 const data = await response.json();
 
                 if (code !== currentStockCode) {
@@ -2674,12 +2752,13 @@
         function showAIScore(data) {
             const resultDiv = document.getElementById('aiScoreResult');
 
-            const score = data.overall_score || 0;
+            const score = safePercentWidth(data.overall_score || 0);
             let scoreClass = 'low';
             if (score >= 70) scoreClass = 'high';
             else if (score >= 50) scoreClass = 'medium';
 
-            const rec = data.recommendation || '持有';
+            const rec = String(data.recommendation || '持有');
+            const recText = safeText(rec);
             let recClass = 'hold';
             if (rec === '买入') recClass = 'buy';
             else if (rec === '卖出') recClass = 'sell';
@@ -2698,7 +2777,7 @@
                     sourceIndustryRank.summary
                 )
             );
-            const industryRankScore = industryRank.score ?? sourceIndustryRank.rule_score ?? 0;
+            const industryRankScore = safePercentWidth(industryRank.score ?? sourceIndustryRank.rule_score ?? 0);
             const industryMetrics = Array.isArray(sourceIndustryRank.metrics)
                 ? sourceIndustryRank.metrics.filter(item => item && item.available).slice(0, 8)
                 : [];
@@ -2711,9 +2790,9 @@
                 if (!items || items.length === 0) return '';
                 return `
                     <div class="ai-source-list">
-                        <div class="ai-source-list-title">${title}</div>
+                        <div class="ai-source-list-title">${safeText(title)}</div>
                         <ul>
-                            ${items.slice(0, 3).map(item => `<li>${item}</li>`).join('')}
+                            ${items.slice(0, 3).map(item => `<li>${safeText(item)}</li>`).join('')}
                         </ul>
                     </div>
                 `;
@@ -2725,8 +2804,8 @@
                     <div class="ai-source-grid">
                         ${items.map(item => `
                             <div class="ai-source-item">
-                                <div class="label">${item.name || '-'}</div>
-                                <div class="value">${item.display_value || '暂无'}${item.rank_text && item.rank_text !== '暂无' ? ` / ${item.rank_text}` : ''}</div>
+                                <div class="label">${safeText(item.name, '-')}</div>
+                                <div class="value">${safeText(item.display_value, '暂无')}${item.rank_text && item.rank_text !== '暂无' ? ` / ${safeText(item.rank_text)}` : ''}</div>
                             </div>
                         `).join('')}
                     </div>
@@ -2739,7 +2818,7 @@
                     <div class="ai-source-list">
                         <div class="ai-source-list-title">头部同行参考</div>
                         <ul>
-                            ${items.map(item => `<li>${item.name || '-'}(${item.code || '-'}) 总市值${item.total_market_cap || '暂无'}，净利润${item.net_profit || '暂无'}</li>`).join('')}
+                            ${items.map(item => `<li>${safeText(item.name, '-')}(${safeText(item.code, '-')}) 总市值${safeText(item.total_market_cap, '暂无')}，净利润${safeText(item.net_profit, '暂无')}</li>`).join('')}
                         </ul>
                     </div>
                 `;
@@ -2764,41 +2843,41 @@
                         <div class="ai-score-card-title">综合评分</div>
                         <div class="ai-score-value">
                             <div class="ai-score-circle ${scoreClass}">
-                                <span class="score">${score}</span>
+                                <span class="score">${safeText(score)}</span>
                                 <span class="label">分</span>
                             </div>
-                            <span class="ai-recommendation ${recClass}">${rec}</span>
+                            <span class="ai-recommendation ${recClass}">${recText}</span>
                         </div>
                     </div>
 
                     <!-- 技术面 -->
                     <div class="ai-score-card">
                         <div class="ai-score-card-title">📈 技术面</div>
-                        <div class="ai-detail-score-value ${getScoreClass(technical.score || 0)}">
-                            ${technical.score || 0}分
+                        <div class="ai-detail-score-value ${getScoreClass(safePercentWidth(technical.score || 0))}">
+                            ${safeText(safePercentWidth(technical.score || 0))}分
                         </div>
                     </div>
 
                     <!-- 基本面 -->
                     <div class="ai-score-card">
                         <div class="ai-score-card-title">💰 基本面</div>
-                        <div class="ai-detail-score-value ${getScoreClass(fundamental.score || 0)}">
-                            ${fundamental.score || 0}分
+                        <div class="ai-detail-score-value ${getScoreClass(safePercentWidth(fundamental.score || 0))}">
+                            ${safeText(safePercentWidth(fundamental.score || 0))}分
                         </div>
                     </div>
 
                     <!-- 舆情面 -->
                     <div class="ai-score-card">
                         <div class="ai-score-card-title">📰 舆情面</div>
-                        <div class="ai-detail-score-value ${getScoreClass(sentiment.score || 0)}">
-                            ${sentiment.score || 0}分
+                        <div class="ai-detail-score-value ${getScoreClass(safePercentWidth(sentiment.score || 0))}">
+                            ${safeText(safePercentWidth(sentiment.score || 0))}分
                         </div>
                     </div>
 
                     <div class="ai-score-card">
                         <div class="ai-score-card-title">🏭 行业排名</div>
                         <div class="ai-detail-score-value ${getScoreClass(industryRankScore)}">
-                            ${industryRankScore}分
+                            ${safeText(industryRankScore)}分
                         </div>
                     </div>
                 </div>
@@ -2809,63 +2888,63 @@
                     <div class="ai-detail-score">
                         <div class="ai-detail-score-header">
                             <div class="ai-detail-score-title">📈 技术面分析</div>
-                            <div class="ai-detail-score-value ${getScoreClass(technical.score || 0)}">
-                                ${technical.score || 0}分
+                            <div class="ai-detail-score-value ${getScoreClass(safePercentWidth(technical.score || 0))}">
+                                ${safeText(safePercentWidth(technical.score || 0))}分
                             </div>
                         </div>
                         <div class="ai-progress-bar">
-                            <div class="ai-progress-fill ${getScoreClass(technical.score || 0)}"
-                                 style="width: ${technical.score || 0}%"></div>
+                            <div class="ai-progress-fill ${getScoreClass(safePercentWidth(technical.score || 0))}"
+                                 style="width: ${safePercentWidth(technical.score || 0)}%"></div>
                         </div>
-                        <div class="ai-analysis-text">${technical.analysis || '暂无分析'}</div>
+                        <div class="ai-analysis-text">${safeText(technical.analysis, '暂无分析')}</div>
                     </div>
 
                     <!-- 基本面详细 -->
                     <div class="ai-detail-score">
                         <div class="ai-detail-score-header">
                             <div class="ai-detail-score-title">💰 基本面分析</div>
-                            <div class="ai-detail-score-value ${getScoreClass(fundamental.score || 0)}">
-                                ${fundamental.score || 0}分
+                            <div class="ai-detail-score-value ${getScoreClass(safePercentWidth(fundamental.score || 0))}">
+                                ${safeText(safePercentWidth(fundamental.score || 0))}分
                             </div>
                         </div>
                         <div class="ai-progress-bar">
-                            <div class="ai-progress-fill ${getScoreClass(fundamental.score || 0)}"
-                                 style="width: ${fundamental.score || 0}%"></div>
+                            <div class="ai-progress-fill ${getScoreClass(safePercentWidth(fundamental.score || 0))}"
+                                 style="width: ${safePercentWidth(fundamental.score || 0)}%"></div>
                         </div>
-                        <div class="ai-analysis-text">${fundamental.analysis || '暂无分析'}</div>
+                        <div class="ai-analysis-text">${safeText(fundamental.analysis, '暂无分析')}</div>
                     </div>
 
                     <div class="ai-detail-score">
                         <div class="ai-detail-score-header">
                             <div class="ai-detail-score-title">🏭 行业排名分析</div>
                             <div class="ai-detail-score-value ${getScoreClass(industryRankScore)}">
-                                ${industryRankScore}分
+                                ${safeText(industryRankScore)}分
                             </div>
                         </div>
                         <div class="ai-progress-bar">
                             <div class="ai-progress-fill ${getScoreClass(industryRankScore)}"
                                  style="width: ${industryRankScore}%"></div>
                         </div>
-                        <div class="ai-analysis-text">${industryRank.analysis || sourceIndustryRank.summary || '暂无分析'}</div>
+                        <div class="ai-analysis-text">${safeText(industryRank.analysis || sourceIndustryRank.summary, '暂无分析')}</div>
 
                         <div class="ai-source-summary">
                             ${hasSourceIndustryRank ? `
                             <div class="ai-source-grid">
                                 <div class="ai-source-item">
                                     <div class="label">所属行业</div>
-                                    <div class="value">${industryInfo.board_name || '-'}</div>
+                                    <div class="value">${safeText(industryInfo.board_name, '-')}</div>
                                 </div>
                                 <div class="ai-source-item">
                                     <div class="label">行业样本数</div>
-                                    <div class="value">${industryInfo.total_count ?? '-'}</div>
+                                    <div class="value">${safeText(industryInfo.total_count ?? '-')}</div>
                                 </div>
                                 <div class="ai-source-item">
                                     <div class="label">位置判断</div>
-                                    <div class="value">${sourceIndustryRank.position || '-'}</div>
+                                    <div class="value">${safeText(sourceIndustryRank.position, '-')}</div>
                                 </div>
                                 <div class="ai-source-item">
                                     <div class="label">规则评分</div>
-                                    <div class="value">${sourceIndustryRank.rule_score ?? '-'}</div>
+                                    <div class="value">${safeText(sourceIndustryRank.rule_score ?? '-')}</div>
                                 </div>
                             </div>
                             ${renderIndustryMetricGrid(industryMetrics)}
@@ -2878,42 +2957,42 @@
                     <div class="ai-detail-score">
                         <div class="ai-detail-score-header">
                             <div class="ai-detail-score-title">📰 舆情面分析</div>
-                            <div class="ai-detail-score-value ${getScoreClass(sentiment.score || 0)}">
-                                ${sentiment.score || 0}分
+                            <div class="ai-detail-score-value ${getScoreClass(safePercentWidth(sentiment.score || 0))}">
+                                ${safeText(safePercentWidth(sentiment.score || 0))}分
                             </div>
                         </div>
                         <div class="ai-progress-bar">
-                            <div class="ai-progress-fill ${getScoreClass(sentiment.score || 0)}"
-                                 style="width: ${sentiment.score || 0}%"></div>
+                            <div class="ai-progress-fill ${getScoreClass(safePercentWidth(sentiment.score || 0))}"
+                                 style="width: ${safePercentWidth(sentiment.score || 0)}%"></div>
                         </div>
-                        <div class="ai-analysis-text">${sentiment.analysis || '暂无分析'}</div>
+                        <div class="ai-analysis-text">${safeText(sentiment.analysis, '暂无分析')}</div>
 
                         <div class="ai-source-summary">
                             ${hasSourceSentiment ? `
                             <div class="ai-source-grid">
                                 <div class="ai-source-item">
                                     <div class="label">新闻数</div>
-                                    <div class="value">${sourceSentiment.news_count ?? 0}</div>
+                                    <div class="value">${safeText(sourceSentiment.news_count ?? 0)}</div>
                                 </div>
                                 <div class="ai-source-item">
                                     <div class="label">公告数</div>
-                                    <div class="value">${sourceSentiment.announcement_count ?? 0}</div>
+                                    <div class="value">${safeText(sourceSentiment.announcement_count ?? 0)}</div>
                                 </div>
                                 <div class="ai-source-item">
                                     <div class="label">研报数</div>
-                                    <div class="value">${sourceSentiment.research_reports ?? 0}</div>
+                                    <div class="value">${safeText(sourceSentiment.research_reports ?? 0)}</div>
                                 </div>
                                 <div class="ai-source-item">
                                     <div class="label">正面/负面</div>
-                                    <div class="value">${sourceSentiment.positive_news ?? 0} / ${sourceSentiment.negative_news ?? 0}</div>
+                                    <div class="value">${safeText(sourceSentiment.positive_news ?? 0)} / ${safeText(sourceSentiment.negative_news ?? 0)}</div>
                                 </div>
                                 <div class="ai-source-item">
                                     <div class="label">舆情倾向</div>
-                                    <div class="value">${sourceSentiment.sentiment_label || '-'}</div>
+                                    <div class="value">${safeText(sourceSentiment.sentiment_label, '-')}</div>
                                 </div>
                                 <div class="ai-source-item">
                                     <div class="label">热度评分</div>
-                                    <div class="value">${sourceSentiment.hot_score ?? 0}</div>
+                                    <div class="value">${safeText(sourceSentiment.hot_score ?? 0)}</div>
                                 </div>
                             </div>
                             ${renderSentimentList('代表性新闻', sourceSentiment.latest_news)}
@@ -2924,7 +3003,7 @@
                     </div>
                 </div>
 
-                ${data.is_updating ? '<p style="text-align:center;color:#f39c12;margin-top:20px;">🔄 正在生成最新分析，当前先显示历史结果...</p>' : ''}
+                ${Boolean(data.is_updating) ? '<p style="text-align:center;color:#f39c12;margin-top:20px;">🔄 正在生成最新分析，当前先显示历史结果...</p>' : ''}
                 ${cacheMessage}
             `;
         }
@@ -2935,7 +3014,7 @@
                 <div class="ai-error">
                     <div class="icon">⚠️</div>
                     <h3>分析失败</h3>
-                    <p>${message}</p>
+                    <p>${safeText(message)}</p>
                 </div>
             `;
         }
@@ -2945,7 +3024,7 @@
         // 页面加载时获取大盘分析摘要
         async function loadMarketSummary() {
             try {
-                const response = await fetch(runtime.apiUrl('/api/market/summary'));
+                const response = await fetch(runtime.apiUrl('/api/market/summary'), runtime.fetchOptions());
                 const data = await response.json();
 
                 if (data.code === 0 && data.data) {
@@ -2987,35 +3066,35 @@
                 <div class="market-summary">
                     <div class="market-item">
                         <div class="label">市场温度</div>
-                        <div class="value">${data.overall_score || '-'}分 🌡️</div>
+                        <div class="value">${safeText(data.overall_score, '-')}分 🌡️</div>
                     </div>
                     <div class="market-item">
                         <div class="label">短期趋势</div>
-                        <div class="value ${trendClass}">${trendText}</div>
+                        <div class="value ${trendClass}">${safeText(trendText)}</div>
                     </div>
                     <div class="market-item">
                         <div class="label">分析时间</div>
-                        <div class="value" style="font-size: 0.9em;">${formatAnalysisTime(data.analyzed_at)}</div>
+                        <div class="value" style="font-size: 0.9em;">${safeText(formatAnalysisTime(data.analyzed_at))}</div>
                     </div>
                 </div>
                 ${data.key_levels ? `<div class="market-advice" style="border-left-color: #48dbfb;">
                     <div class="label" style="color: #48dbfb;">🎯 关键点位</div>
-                    <div>${data.key_levels}</div>
+                    <div>${safeText(data.key_levels)}</div>
                 </div>` : ''}
                 ${data.future_outlook ? `<div class="market-advice" style="border-left-color: #a29bfe;">
                     <div class="label" style="color: #a29bfe;">� 走势预判</div>
-                    <div>${data.future_outlook}</div>
+                    <div>${safeText(data.future_outlook)}</div>
                 </div>` : ''}
                 <div class="market-advice">
                     <div class="label">�💡 操作建议</div>
-                    <div>${data.strategy_advice || '暂无建议'}</div>
+                    <div>${safeText(data.strategy_advice, '暂无建议')}</div>
                 </div>
                 ${data.risk_alert ? `<div class="market-advice" style="border-left-color: #ff6b35; background: rgba(255,107,53,0.08);">
                     <div class="label" style="color: #ff6b35;">⚠️ 风险提示</div>
-                    <div>${data.risk_alert}</div>
+                    <div>${safeText(data.risk_alert)}</div>
                 </div>` : ''}
                 <div class="market-meta">
-                    <span>触发: ${triggerTypeText}</span>
+                    <span>触发: ${safeText(triggerTypeText)}</span>
                 </div>
             `;
         }
@@ -3042,7 +3121,7 @@
                 const date = new Date(timeStr);
                 return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
             } catch {
-                return timeStr;
+                return safeText(timeStr, '-');
             }
         }
     </script>
